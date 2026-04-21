@@ -1,8 +1,18 @@
-# Ninja Watcher <img width="50" height="36" alt="image" src="https://github.com/user-attachments/assets/8195fa8b-c775-4921-9643-50baac17c864" />
+# Ninja Watcher <img width="50" height="36" alt="image" src="https://github.com/user-attachments/assets/f7daa26e-71c9-4413-a62a-98a05d0e67d7" />
 
 
 
-<img width="1030" height="281" alt="image" src="https://github.com/user-attachments/assets/a373ad00-832e-4e75-a546-66cbc8418467" />
+
+<img width="1030" height="281" alt="image" src="https://github.com/user-attachments/assets/0f8daad1-5497-4090-81f8-4a0845381b3e" />
+
+
+
+
+
+https://github.com/user-attachments/assets/bdf5d005-5643-4ea0-a099-51457626030c
+
+
+
 
 
 
