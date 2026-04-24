@@ -1,4 +1,5 @@
-<img align="left" width="32" height="32" src="https://github.com/user-attachments/assets/f435827d-1f17-4a97-85d0-beebf1141ba6">
+<img align="left" width="32" height="32" src="https://github.com/user-attachments/assets/20205c1d-1c8e-4132-a9bf-0bfdc09323bf"> 
+
 
 # NinjaOne Terminal Popout
 
@@ -7,7 +8,8 @@ Adds a **popout button** to the NinjaOne terminal header...
 
 Adds a **popout button** to the NinjaOne terminal header that moves the entire terminal modal into a Document Picture-in-Picture window. The PiP window is a real OS-level window, so you can drag it to another monitor.
 
-<img width="323" height="344" alt="image" src="https://github.com/user-attachments/assets/7c21ee02-928d-4f03-9aff-bcdb8fa6293d" />
+<img width="323" height="344" alt="image" src="https://github.com/user-attachments/assets/1cad4339-0228-4e95-870c-957d75f0ceb3" />
+
 
 
 ## Install (unpacked)
@@ -25,12 +27,14 @@ Adds a **popout button** to the NinjaOne terminal header that moves the entire t
 ## Usage
 
 - Click the popout icon → terminal jumps into a floating window.
-<img width="1093" height="654" alt="image" src="https://github.com/user-attachments/assets/be891ee5-dae0-429c-93eb-f8c11cc4f271" />
+<img width="1093" height="654" alt="image" src="https://github.com/user-attachments/assets/373724ea-4d44-4e91-b244-ee2d3087bd90" />
+
 
 - Drag the window to any monitor.
 - Resize it as needed — xterm auto-fits.
 - Close the floating window (X) → terminal snaps back to the main page.
-<img width="922" height="679" alt="image" src="https://github.com/user-attachments/assets/ccf4b18b-d9e9-4e8d-b297-1aa5296af966" />
+<img width="922" height="679" alt="image" src="https://github.com/user-attachments/assets/7685c079-f101-42d9-9bd2-7fb14dbd36c1" />
+
 
 - Then close the terminal the normal way (Ninja's X) to end the session cleanly.
 
