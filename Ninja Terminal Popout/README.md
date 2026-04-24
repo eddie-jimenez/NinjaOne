@@ -1,16 +1,10 @@
 <img align="left" width="32" height="32" src="https://github.com/user-attachments/assets/20205c1d-1c8e-4132-a9bf-0bfdc09323bf"> 
 
-
 # NinjaOne Terminal Popout
-
-Adds a **popout button** to the NinjaOne terminal header...
-
 
 Adds a **popout button** to the NinjaOne terminal header that moves the entire terminal modal into a Document Picture-in-Picture window. The PiP window is a real OS-level window, so you can drag it to another monitor.
 
 <img width="323" height="344" alt="image" src="https://github.com/user-attachments/assets/1cad4339-0228-4e95-870c-957d75f0ceb3" />
-
-
 
 ## Install (unpacked)
 
@@ -27,14 +21,14 @@ Adds a **popout button** to the NinjaOne terminal header that moves the entire t
 ## Usage
 
 - Click the popout icon → terminal jumps into a floating window.
-<img width="1093" height="654" alt="image" src="https://github.com/user-attachments/assets/373724ea-4d44-4e91-b244-ee2d3087bd90" />
 
+<img width="1093" height="654" alt="image" src="https://github.com/user-attachments/assets/373724ea-4d44-4e91-b244-ee2d3087bd90" />
 
 - Drag the window to any monitor.
 - Resize it as needed — xterm auto-fits.
 - Close the floating window (X) → terminal snaps back to the main page.
-<img width="922" height="679" alt="image" src="https://github.com/user-attachments/assets/7685c079-f101-42d9-9bd2-7fb14dbd36c1" />
 
+<img width="922" height="679" alt="image" src="https://github.com/user-attachments/assets/7685c079-f101-42d9-9bd2-7fb14dbd36c1" />
 
 - Then close the terminal the normal way (Ninja's X) to end the session cleanly.
 
@@ -51,3 +45,18 @@ Runs only on `*.rmmservices.net`. Adjust the `matches` field in `manifest.json` 
 - The entire modal (header bar + terminal body) is moved together, so all the Ninja controls (keyboard, download, copy, close) come along.
 - On close, the modal is restored to its exact original position in the DOM.
 - The WebSocket connection is not affected by the reparent — xterm.js handles this cleanly.
+
+## Author
+
+**Eddie Jimenez**  
+[LinkedIn](https://www.linkedin.com/in/eddie-p-jimenez/)
+
+Built out of a desire to move the NinjaOne terminal to a second monitor instead of being stuck in a single tab. If you use this, find it useful, or extend it, a shout-out on LinkedIn is always appreciated.
+
+## License
+
+Released under the [MIT License](LICENSE) — free to use, modify, and distribute for personal or commercial use. Attribution appreciated but not required.
+
+## Contributing
+
+Bug reports, suggestions, and PRs welcome. If NinjaOne changes their DOM structure and the extension breaks, open an issue with a screenshot of the DevTools Elements panel showing the terminal modal's HTML and I'll update the selectors.
