@@ -6,6 +6,7 @@ Adds a **popout button** to the NinjaOne terminal header that moves the entire t
 
 <img width="323" height="344" alt="image" src="https://github.com/user-attachments/assets/1cad4339-0228-4e95-870c-957d75f0ceb3" />
 
+
 ## Install (unpacked)
 
 1. Download the latest `ninja-terminal-popout.zip` from this repo.
