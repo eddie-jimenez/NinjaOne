@@ -23,13 +23,15 @@ Adds a **popout button** to the NinjaOne terminal header that moves the entire t
 
 - Click the popout icon → terminal jumps into a floating window.
 
-<img width="1093" height="654" alt="image" src="https://github.com/user-attachments/assets/373724ea-4d44-4e91-b244-ee2d3087bd90" />
+<img width="1093" height="654" alt="image" src="https://github.com/user-attachments/assets/434d8a3b-21d4-4fb3-9495-ca2d78b91a73" />
+
 
 - Drag the window to any monitor.
 - Resize it as needed — xterm auto-fits.
 - Close the floating window (X) → terminal snaps back to the main page.
 
-<img width="922" height="679" alt="image" src="https://github.com/user-attachments/assets/7685c079-f101-42d9-9bd2-7fb14dbd36c1" />
+<img width="922" height="679" alt="image" src="https://github.com/user-attachments/assets/564f6767-f202-45b6-bda1-f221bd41cb77" />
+
 
 - Then close the terminal the normal way (Ninja's X) to end the session cleanly.
 
