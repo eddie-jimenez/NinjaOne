@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher_agent.sh — User LaunchAgent
-# Version: 4.6
+# Version: 4.8
 # Fix: Agent log path changed from /var/log/ to /tmp/ so the user-context
 #      agent process has write permission.
 #
@@ -14,7 +14,7 @@ DIALOG_BIN="/Library/Application Support/Dialog/Dialog.app/Contents/MacOS/Dialog
 UI_INSTRUCTION_FILE="/tmp/ninja_patch_ui.json"
 DIALOG_CMD_FILE="/tmp/ninja_patch_dialog.cmd"
 AGENT_LOG="/tmp/ninja_patch_watcher_agent.log"
-POLL_INTERVAL=2
+POLL_INTERVAL=1
 
 log() {
     local ts
@@ -213,7 +213,7 @@ relaunch_app() {
 # Main loop — polls UI instruction file and reacts
 # ---------------------------------------------------------------------------
 main() {
-    log "ninja_patch_watcher_agent v4.6 started (PID $$)"
+    log "ninja_patch_watcher_agent v4.8 started (PID $$)"
 
     if [[ ! -x "$DIALOG_BIN" ]]; then
         log "ERROR: swiftDialog not found at $DIALOG_BIN — exiting."
@@ -256,6 +256,15 @@ main() {
                 sleep 1
                 show_progress_dialog "$app_name" "$app_icon"
                 dialog_running=true
+                # Monitor progress dialog — if it gets killed by an app updater,
+                # relaunch it once so the user sees something during the install
+                (
+                    sleep 3
+                    if ! pgrep -f "Dialog.app" > /dev/null 2>&1; then
+                        log "Progress dialog was killed — relaunching"
+                        show_progress_dialog "$app_name" "$app_icon"
+                    fi
+                ) &
                 ;;
 
             success)
