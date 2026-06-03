@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher_agent.sh — User LaunchAgent
-# Version: 4.8
+# Version: 4.9
 # Fix: Agent log path changed from /var/log/ to /tmp/ so the user-context
 #      agent process has write permission.
 #
@@ -213,7 +213,7 @@ relaunch_app() {
 # Main loop — polls UI instruction file and reacts
 # ---------------------------------------------------------------------------
 main() {
-    log "ninja_patch_watcher_agent v4.8 started (PID $$)"
+    log "ninja_patch_watcher_agent v4.9 started (PID $$)"
 
     if [[ ! -x "$DIALOG_BIN" ]]; then
         log "ERROR: swiftDialog not found at $DIALOG_BIN — exiting."
@@ -256,15 +256,30 @@ main() {
                 sleep 1
                 show_progress_dialog "$app_name" "$app_icon"
                 dialog_running=true
-                # Monitor progress dialog — if it gets killed by an app updater,
-                # relaunch it once so the user sees something during the install
-                (
-                    sleep 3
-                    if ! pgrep -f "Dialog.app" > /dev/null 2>&1; then
-                        log "Progress dialog was killed — relaunching"
-                        show_progress_dialog "$app_name" "$app_icon"
-                    fi
-                ) &
+                # Store current ts so the monitor knows when to stop
+                local progress_ts="$ts"
+                local _app_name="$app_name"
+                local _app_icon="$app_icon"
+                # Background monitor — if dialog gets killed, relaunch it
+                # Runs until a new instruction (success/failure) replaces the progress ts
+                {
+                    local monitor_wait=0
+                    while [[ $monitor_wait -lt 360 ]]; do
+                        sleep 5
+                        monitor_wait=$((monitor_wait + 5))
+                        # Stop if instruction file has moved on from progress
+                        local cur_ts cur_action
+                        cur_ts=$(grep -o '"ts":"[^"]*"' "$UI_INSTRUCTION_FILE" 2>/dev/null | sed 's/"ts":"//;s/"//')
+                        cur_action=$(grep -o '"action":"[^"]*"' "$UI_INSTRUCTION_FILE" 2>/dev/null | sed 's/"action":"//;s/"//')
+                        [[ "$cur_ts" != "$progress_ts" ]] && break
+                        [[ "$cur_action" != "progress" ]] && break
+                        # Relaunch if dialog is not running
+                        if ! pgrep -f "Dialog.app" > /dev/null 2>&1; then
+                            log "Progress dialog was killed — relaunching for: $_app_name"
+                            show_progress_dialog "$_app_name" "$_app_icon"
+                        fi
+                    done
+                } &
                 ;;
 
             success)
