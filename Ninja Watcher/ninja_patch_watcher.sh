@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher.sh — Root LaunchDaemon
-# Version: 4.9
+# Version: 4.11
 #
 # Watches NinjaRMM NJDialog logs. When user clicks Install Now, handles all
 # Ninja/Orbit logic and writes UI instructions to /tmp/ninja_patch_ui.json.
@@ -342,7 +342,7 @@ handle_patch_event() {
 }
 
 main() {
-    log "ninja_patch_watcher v4.9 started (PID $$)"
+    log "ninja_patch_watcher v4.11 started (PID $$)"
 
     if [[ ! -d "$NJDIALOG_LOG_DIR" ]]; then
         log "ERROR: NJDialog log directory not found — exiting."
