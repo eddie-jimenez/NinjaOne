@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher_agent.sh — User LaunchAgent
-# Version: 4.9
+# Version: 4.11
 # Fix: Agent log path changed from /var/log/ to /tmp/ so the user-context
 #      agent process has write permission.
 #
@@ -15,6 +15,7 @@ UI_INSTRUCTION_FILE="/tmp/ninja_patch_ui.json"
 DIALOG_CMD_FILE="/tmp/ninja_patch_dialog.cmd"
 AGENT_LOG="/tmp/ninja_patch_watcher_agent.log"
 POLL_INTERVAL=1
+DIALOG_MAJOR_VERSION=2  # detected at startup
 
 log() {
     local ts
@@ -37,7 +38,8 @@ parse_field() {
 }
 
 # ---------------------------------------------------------------------------
-# Show progress dialog — branded with app name and icon
+# Show progress dialog — version-aware for swiftDialog 2.x and 3.x
+# swiftDialog 3.0 removed --button1disabled and requires bare flags at end
 # ---------------------------------------------------------------------------
 show_progress_dialog() {
     local app_name="$1"
@@ -50,28 +52,50 @@ show_progress_dialog() {
     local icon_arg="SF=arrow.down.circle.fill,colour=blue"
     [[ -n "$app_icon" && -f "$app_icon" ]] && icon_arg="$app_icon"
 
-    "$DIALOG_BIN" \
-        --title "🥷 Software Update In Progress" \
-        --titlefont "size=17" \
-        --message "**${app_name}** is being updated by your IT team.\n\nThe application will reopen automatically once the update is complete." \
-        --messagefont "size=14" \
-        --icon "$icon_arg" \
-        --progress \
-        --progresstext "Installing update…" \
-        --button1text "Please Wait" \
-        --button1disabled \
-        --commandfile "$DIALOG_CMD_FILE" \
-        --appearance light \
-        --windowbuttons close,min,max \
-        --position centre \
-        --moveable \
-        --ontop \
-        --width 520 \
-        --height 260 \
-        --hidetimerbar \
-        &>/dev/null &
+    if [[ "$DIALOG_MAJOR_VERSION" -ge 3 ]]; then
+        # swiftDialog 3.x: no --button1disabled, bare flags must be at end
+        "$DIALOG_BIN" \
+            --title "🥷 Software Update In Progress" \
+            --titlefont "size=17" \
+            --message "**${app_name}** is being updated by your IT team.\n\nThe application will reopen automatically once the update is complete." \
+            --messagefont "size=14" \
+            --icon "$icon_arg" \
+            --progress \
+            --progresstext "Installing update…" \
+            --button1text "Please Wait" \
+            --commandfile "$DIALOG_CMD_FILE" \
+            --appearance light \
+            --windowbuttons close,min,max \
+            --position centre \
+            --width 520 \
+            --height 260 \
+            --moveable --ontop --hidetimerbar \
+            &>/dev/null &
+    else
+        # swiftDialog 2.x: --button1disabled supported
+        "$DIALOG_BIN" \
+            --title "🥷 Software Update In Progress" \
+            --titlefont "size=17" \
+            --message "**${app_name}** is being updated by your IT team.\n\nThe application will reopen automatically once the update is complete." \
+            --messagefont "size=14" \
+            --icon "$icon_arg" \
+            --progress \
+            --progresstext "Installing update…" \
+            --button1text "Please Wait" \
+            --button1disabled \
+            --commandfile "$DIALOG_CMD_FILE" \
+            --appearance light \
+            --windowbuttons close,min,max \
+            --position centre \
+            --moveable \
+            --ontop \
+            --width 520 \
+            --height 260 \
+            --hidetimerbar \
+            &>/dev/null &
+    fi
 
-    log "swiftDialog progress launched (PID $!) for: $app_name"
+    log "swiftDialog $DIALOG_MAJOR_VERSION.x progress launched (PID $!) for: $app_name"
 }
 
 # ---------------------------------------------------------------------------
@@ -115,10 +139,9 @@ show_completion_dialog() {
         --appearance light \
         --windowbuttons close,min,max \
         --position centre \
-        --moveable \
-        --ontop \
         --width 520 \
         --height 220 \
+        --moveable --ontop \
         &>/dev/null &
 
     log "Completion dialog launched (PID $!) for: $app_name ($prev_version → $new_version)"
@@ -149,10 +172,9 @@ show_failure_dialog() {
         --appearance light \
         --windowbuttons close,min,max \
         --position centre \
-        --moveable \
-        --ontop \
         --width 520 \
         --height 220 \
+        --moveable --ontop \
         &>/dev/null &
 
     log "Failure dialog launched (PID $!) for: $app_name"
@@ -213,12 +235,21 @@ relaunch_app() {
 # Main loop — polls UI instruction file and reacts
 # ---------------------------------------------------------------------------
 main() {
-    log "ninja_patch_watcher_agent v4.9 started (PID $$)"
+    log "ninja_patch_watcher_agent v4.11 started (PID $$)"
 
     if [[ ! -x "$DIALOG_BIN" ]]; then
         log "ERROR: swiftDialog not found at $DIALOG_BIN — exiting."
         exit 1
     fi
+
+    # Detect swiftDialog major version — 3.x removed --button1disabled
+    # and requires bare flags at end of command when calling Dialog directly
+    local detected_version
+    detected_version=$("$DIALOG_BIN" --version 2>/dev/null | head -1 | cut -d. -f1)
+    if [[ "$detected_version" =~ ^[0-9]+$ ]]; then
+        DIALOG_MAJOR_VERSION="$detected_version"
+    fi
+    log "swiftDialog version: $("$DIALOG_BIN" --version 2>/dev/null | head -1) (major: $DIALOG_MAJOR_VERSION)"
 
     local last_ts=""
     local dialog_running=false
