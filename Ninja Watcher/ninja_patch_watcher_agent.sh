@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher_agent.sh — User LaunchAgent
-# Version: 4.11
+# Version: 4.12
 # Fix: Agent log path changed from /var/log/ to /tmp/ so the user-context
 #      agent process has write permission.
 #
@@ -235,7 +235,7 @@ relaunch_app() {
 # Main loop — polls UI instruction file and reacts
 # ---------------------------------------------------------------------------
 main() {
-    log "ninja_patch_watcher_agent v4.11 started (PID $$)"
+    log "ninja_patch_watcher_agent v4.12 started (PID $$)"
 
     if [[ ! -x "$DIALOG_BIN" ]]; then
         log "ERROR: swiftDialog not found at $DIALOG_BIN — exiting."
