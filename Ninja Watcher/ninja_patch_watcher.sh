@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher.sh — Root LaunchDaemon
-# Version: 4.11
+# Version: 4.12
 #
 # Watches NinjaRMM NJDialog logs. When user clicks Install Now, handles all
 # Ninja/Orbit logic and writes UI instructions to /tmp/ninja_patch_ui.json.
@@ -182,9 +182,22 @@ get_app_icon() {
 
 get_patch_status() {
     local f="${1:-$ORBIT_APPLY_OUTPUT}"
+    local title="${2:-}"
     [[ ! -f "$f" ]] && echo "unknown" && return
     local s
-    s=$(grep -o '"status" *: *"[^"]*"' "$f" 2>/dev/null | head -1 | sed 's/"status" *: *"//;s/"//')
+    if [[ -n "$title" ]]; then
+        s=$(python3 -c "
+import json, sys
+try:
+    data = json.load(open('$f'))
+    for item in data.get('patch_apply_report',{}).get('data',[]):
+        if item.get('title','').lower() == '$title'.lower():
+            print(item.get('status',''))
+            break
+except: pass
+" 2>/dev/null)
+    fi
+    [[ -z "$s" ]] && s=$(grep -o '"status" *: *"[^"]*"' "$f" 2>/dev/null | head -1 | sed 's/"status" *: *"//;s/"//')
     case "$s" in
         success|installed) echo "success" ;;
         failed)            echo "failed" ;;
@@ -194,8 +207,23 @@ get_patch_status() {
 
 get_new_version_from_orbit() {
     local f="${1:-$ORBIT_APPLY_OUTPUT}"
+    local title="${2:-}"
     [[ ! -f "$f" ]] && return
-    grep -o '"version" *: *"[^"]*"' "$f" 2>/dev/null | head -1 | sed 's/"version" *: *"//;s/"//'
+    local v
+    if [[ -n "$title" ]]; then
+        v=$(python3 -c "
+import json, sys
+try:
+    data = json.load(open('$f'))
+    for item in data.get('patch_apply_report',{}).get('data',[]):
+        if item.get('title','').lower() == '$title'.lower():
+            print(item.get('version',''))
+            break
+except: pass
+" 2>/dev/null)
+    fi
+    [[ -z "$v" ]] && v=$(grep -o '"version" *: *"[^"]*"' "$f" 2>/dev/null | head -1 | sed 's/"version" *: *"//;s/"//')
+    echo "$v"
 }
 
 get_patch_error() {
@@ -284,7 +312,8 @@ handle_patch_event() {
     # Tell agent to show progress dialog
     write_ui "progress" "$APP_NAME" "$app_icon" "$APP_PATH"
 
-    # Poll Orbit for monTime change
+    # Poll Orbit for completion — detect via monTime change OR title appearing in apply report
+    # Orbit does not always update monTime when appending results for subsequent patches
     local elapsed=0
     local install_done=false
     local patch_title=""
@@ -295,6 +324,8 @@ handle_patch_event() {
         if [[ -f "$ORBIT_APPLY_OUTPUT" ]]; then
             local current_mon_time
             current_mon_time=$(grep -o '"monTime" *: *[0-9]*' "$ORBIT_APPLY_OUTPUT" | grep -o '[0-9]*' | head -1)
+
+            # Primary detection: monTime changed
             if [[ -n "$current_mon_time" && "$current_mon_time" != "$snapshot_mon_time" ]]; then
                 log "Orbit apply output updated (monTime: $current_mon_time)"
                 patch_title=$(grep -o '"title" *: *"[^"]*"' "$ORBIT_APPLY_OUTPUT" | head -1 | sed 's/"title" *: *"//;s/"//')
@@ -302,6 +333,28 @@ handle_patch_event() {
                 log "Patch title from Orbit: $patch_title"
                 install_done=true
                 break
+            fi
+
+            # Secondary detection: snapshot title appears in apply_report with a terminal status
+            # even if monTime did not change (Orbit appended result without updating monTime)
+            if [[ -n "$snapshot_title" ]]; then
+                local title_status
+                title_status=$(python3 -c "
+import json, sys
+try:
+    data = json.load(open('$ORBIT_APPLY_OUTPUT'))
+    for item in data.get('patch_apply_report', {}).get('data', []):
+        if item.get('title','').lower() == '$snapshot_title'.lower():
+            print(item.get('status',''))
+            break
+except: pass
+" 2>/dev/null)
+                if [[ "$title_status" == "installed" || "$title_status" == "success" || "$title_status" == "failed" ]]; then
+                    log "Orbit apply report contains $snapshot_title with status: $title_status (monTime unchanged)"
+                    patch_title="$snapshot_title"
+                    install_done=true
+                    break
+                fi
             fi
         fi
     done
@@ -315,8 +368,8 @@ handle_patch_event() {
         fi
 
         local patch_status new_version patch_error
-        patch_status=$(get_patch_status "$ORBIT_APPLY_OUTPUT")
-        new_version=$(get_new_version_from_orbit "$ORBIT_APPLY_OUTPUT")
+        patch_status=$(get_patch_status "$ORBIT_APPLY_OUTPUT" "$patch_title")
+        new_version=$(get_new_version_from_orbit "$ORBIT_APPLY_OUTPUT" "$patch_title")
         patch_error=$(get_patch_error "$ORBIT_APPLY_OUTPUT")
         [[ -n "$APP_PREV_VERSION" && "$APP_PREV_VERSION" == "$new_version" ]] && APP_PREV_VERSION=""
 
@@ -342,7 +395,7 @@ handle_patch_event() {
 }
 
 main() {
-    log "ninja_patch_watcher v4.11 started (PID $$)"
+    log "ninja_patch_watcher v4.12 started (PID $$)"
 
     if [[ ! -d "$NJDIALOG_LOG_DIR" ]]; then
         log "ERROR: NJDialog log directory not found — exiting."
