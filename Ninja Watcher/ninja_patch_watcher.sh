@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher.sh — Root LaunchDaemon
-# Version: 4.12
+# Version: 4.14
 #
 # Watches NinjaRMM NJDialog logs. When user clicks Install Now, handles all
 # Ninja/Orbit logic and writes UI instructions to /tmp/ninja_patch_ui.json.
@@ -330,30 +330,65 @@ handle_patch_event() {
                 log "Orbit apply output updated (monTime: $current_mon_time)"
                 patch_title=$(grep -o '"title" *: *"[^"]*"' "$ORBIT_APPLY_OUTPUT" | head -1 | sed 's/"title" *: *"//;s/"//')
                 [[ -z "$patch_title" ]] && patch_title="$snapshot_title"
-                log "Patch title from Orbit: $patch_title"
-                install_done=true
-                break
+                # Check if this is a code 21 failure (app still running) — Orbit will retry
+                local mt_error_code
+                mt_error_code=$(python3 -c "
+import json
+try:
+    data = json.load(open('$ORBIT_APPLY_OUTPUT'))
+    for item in data.get('patch_apply_report',{}).get('data',[]):
+        if item.get('title','').lower() == '$patch_title'.lower():
+            codes = [e.get('code','') for e in item.get('errorCodes',[])]
+            print(','.join(codes))
+            break
+except: pass
+" 2>/dev/null)
+                if [[ "$(get_patch_status "$ORBIT_APPLY_OUTPUT" "$patch_title")" == "failed" && "$mt_error_code" == *"21"* ]]; then
+                    log "Orbit reports $patch_title failed (app still running, code 21) — updating dialog and waiting for retry..."
+                    write_ui "waiting" "$APP_NAME" "$app_icon" "$APP_PATH"
+                    snapshot_mon_time="$current_mon_time"
+                else
+                    log "Patch title from Orbit: $patch_title"
+                    install_done=true
+                    break
+                fi
             fi
 
             # Secondary detection: snapshot title appears in apply_report with a terminal status
             # even if monTime did not change (Orbit appended result without updating monTime)
+            # Exception: "failed" with error code 21 (Application running) means Orbit will
+            # retry after the app closes — keep polling instead of treating as done
             if [[ -n "$snapshot_title" ]]; then
-                local title_status
-                title_status=$(python3 -c "
+                local title_status title_error
+                eval "$(python3 -c "
 import json, sys
 try:
     data = json.load(open('$ORBIT_APPLY_OUTPUT'))
     for item in data.get('patch_apply_report', {}).get('data', []):
         if item.get('title','').lower() == '$snapshot_title'.lower():
-            print(item.get('status',''))
+            status = item.get('status','')
+            codes = [e.get('code','') for e in item.get('errorCodes',[])]
+            print('title_status=' + repr(status))
+            print('title_error=' + repr(','.join(codes)))
             break
 except: pass
-" 2>/dev/null)
-                if [[ "$title_status" == "installed" || "$title_status" == "success" || "$title_status" == "failed" ]]; then
+" 2>/dev/null)"
+                if [[ "$title_status" == "installed" || "$title_status" == "success" ]]; then
                     log "Orbit apply report contains $snapshot_title with status: $title_status (monTime unchanged)"
                     patch_title="$snapshot_title"
                     install_done=true
                     break
+                elif [[ "$title_status" == "failed" ]]; then
+                    # Error code 21 = Application running — Orbit will retry, keep polling
+                    if [[ "$title_error" == *"21"* ]]; then
+                        log "Orbit reports $snapshot_title failed (app still running) — updating dialog and waiting for retry..."
+                        write_ui "waiting" "$APP_NAME" "$app_icon" "$APP_PATH"
+                    else
+                        log "Orbit apply report contains $snapshot_title with status: failed (monTime unchanged)"
+                        patch_title="$snapshot_title"
+                        install_done=true
+                        break
+                    fi
                 fi
             fi
         fi
@@ -395,7 +430,7 @@ except: pass
 }
 
 main() {
-    log "ninja_patch_watcher v4.12 started (PID $$)"
+    log "ninja_patch_watcher v4.14 started (PID $$)"
 
     if [[ ! -d "$NJDIALOG_LOG_DIR" ]]; then
         log "ERROR: NJDialog log directory not found — exiting."
