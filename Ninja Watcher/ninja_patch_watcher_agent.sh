@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher_agent.sh — User LaunchAgent
-# Version: 4.12
+# Version: 4.14
 # Fix: Agent log path changed from /var/log/ to /tmp/ so the user-context
 #      agent process has write permission.
 #
@@ -235,7 +235,7 @@ relaunch_app() {
 # Main loop — polls UI instruction file and reacts
 # ---------------------------------------------------------------------------
 main() {
-    log "ninja_patch_watcher_agent v4.12 started (PID $$)"
+    log "ninja_patch_watcher_agent v4.14 started (PID $$)"
 
     if [[ ! -x "$DIALOG_BIN" ]]; then
         log "ERROR: swiftDialog not found at $DIALOG_BIN — exiting."
@@ -287,6 +287,21 @@ main() {
                 sleep 1
                 show_progress_dialog "$app_name" "$app_icon"
                 dialog_running=true
+
+            waiting)
+                # App was still running when Orbit tried to patch (error code 21)
+                # Keep the progress dialog up, just update the message
+                log "Updating dialog — waiting for $app_name to close..."
+                if $dialog_running; then
+                    dialog_cmd "message: **${app_name}** needs to close before updating.\n\nPlease save your work and close the application. The update will resume automatically."
+                    dialog_cmd "progresstext: Waiting for application to close…"
+                else
+                    show_progress_dialog "$app_name" "$app_icon"
+                    dialog_running=true
+                    sleep 1
+                    dialog_cmd "message: **${app_name}** needs to close before updating.\n\nPlease save your work and close the application. The update will resume automatically."
+                    dialog_cmd "progresstext: Waiting for application to close…"
+                fi
                 # Store current ts so the monitor knows when to stop
                 local progress_ts="$ts"
                 local _app_name="$app_name"
