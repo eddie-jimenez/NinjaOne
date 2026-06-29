@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # ninja_patch_watcher_agent.sh — User LaunchAgent
-# Version: 4.14
+# Version: 4.17
 # Fix: Agent log path changed from /var/log/ to /tmp/ so the user-context
 #      agent process has write permission.
 #
@@ -38,8 +38,11 @@ parse_field() {
 }
 
 # ---------------------------------------------------------------------------
-# Show progress dialog — version-aware for swiftDialog 2.x and 3.x
-# swiftDialog 3.0 removed --button1disabled and requires bare flags at end
+# Show progress dialog
+# Uses /usr/local/bin/dialog (dialogcli) with --callingpid $$ so Dialog
+# monitors the agent process itself — not the subshell — and stays alive
+# for the full duration of the install regardless of what the updater kills.
+# dialogcli also handles user session context automatically.
 # ---------------------------------------------------------------------------
 show_progress_dialog() {
     local app_name="$1"
@@ -52,50 +55,27 @@ show_progress_dialog() {
     local icon_arg="SF=arrow.down.circle.fill,colour=blue"
     [[ -n "$app_icon" && -f "$app_icon" ]] && icon_arg="$app_icon"
 
-    if [[ "$DIALOG_MAJOR_VERSION" -ge 3 ]]; then
-        # swiftDialog 3.x: no --button1disabled, bare flags must be at end
-        "$DIALOG_BIN" \
-            --title "🥷 Software Update In Progress" \
-            --titlefont "size=17" \
-            --message "**${app_name}** is being updated by your IT team.\n\nThe application will reopen automatically once the update is complete." \
-            --messagefont "size=14" \
-            --icon "$icon_arg" \
-            --progress \
-            --progresstext "Installing update…" \
-            --button1text "Please Wait" \
-            --commandfile "$DIALOG_CMD_FILE" \
-            --appearance light \
-            --windowbuttons close,min,max \
-            --position centre \
-            --width 520 \
-            --height 260 \
-            --moveable --ontop --hidetimerbar \
-            &>/dev/null &
-    else
-        # swiftDialog 2.x: --button1disabled supported
-        "$DIALOG_BIN" \
-            --title "🥷 Software Update In Progress" \
-            --titlefont "size=17" \
-            --message "**${app_name}** is being updated by your IT team.\n\nThe application will reopen automatically once the update is complete." \
-            --messagefont "size=14" \
-            --icon "$icon_arg" \
-            --progress \
-            --progresstext "Installing update…" \
-            --button1text "Please Wait" \
-            --button1disabled \
-            --commandfile "$DIALOG_CMD_FILE" \
-            --appearance light \
-            --windowbuttons close,min,max \
-            --position centre \
-            --moveable \
-            --ontop \
-            --width 520 \
-            --height 260 \
-            --hidetimerbar \
-            &>/dev/null &
-    fi
+    /usr/local/bin/dialog \
+        --title "🥷 Software Update In Progress" \
+        --titlefont "size=17" \
+        --message "**${app_name}** is being updated by your IT team.\n\nThe application will reopen automatically once the update is complete." \
+        --messagefont "size=14" \
+        --icon "$icon_arg" \
+        --progress \
+        --progresstext "Installing update…" \
+        --button1text "Please Wait" \
+        --button1disabled \
+        --commandfile "$DIALOG_CMD_FILE" \
+        --appearance light \
+        --windowbuttons close,min,max \
+        --position centre \
+        --width 520 \
+        --height 260 \
+        --callingpid $$ \
+        --moveable --ontop --hidetimerbar \
+        &>/dev/null &
 
-    log "swiftDialog $DIALOG_MAJOR_VERSION.x progress launched (PID $!) for: $app_name"
+    log "swiftDialog progress launched (PID $!) for: $app_name (callingpid: $$)"
 }
 
 # ---------------------------------------------------------------------------
@@ -129,7 +109,7 @@ show_completion_dialog() {
     sleep 1
     rm -f "$DIALOG_CMD_FILE"
 
-    "$DIALOG_BIN" \
+    /usr/local/bin/dialog \
         --title "🥷 Update Complete" \
         --titlefont "size=17" \
         --message "**${app_name}** has been updated successfully.${version_line}\n\nThe application is reopening now." \
@@ -141,6 +121,7 @@ show_completion_dialog() {
         --position centre \
         --width 520 \
         --height 220 \
+        --callingpid $$ \
         --moveable --ontop \
         &>/dev/null &
 
@@ -162,7 +143,7 @@ show_failure_dialog() {
     sleep 1
     rm -f "$DIALOG_CMD_FILE"
 
-    "$DIALOG_BIN" \
+    /usr/local/bin/dialog \
         --title "🥷 Update Failed" \
         --titlefont "size=17" \
         --message "The update for **${app_name}** did not complete successfully.${error_line}\n\nPlease contact your IT team if this issue persists." \
@@ -174,6 +155,7 @@ show_failure_dialog() {
         --position centre \
         --width 520 \
         --height 220 \
+        --callingpid $$ \
         --moveable --ontop \
         &>/dev/null &
 
@@ -190,7 +172,7 @@ show_timeout_dialog() {
     sleep 1
     rm -f "$DIALOG_CMD_FILE"
 
-    "$DIALOG_BIN" \
+    /usr/local/bin/dialog \
         --title "🥷 Update Status Unknown" \
         --titlefont "size=17" \
         --message "The update for **${app_name}** may still be in progress.\n\nYou can reopen the application manually." \
@@ -235,7 +217,7 @@ relaunch_app() {
 # Main loop — polls UI instruction file and reacts
 # ---------------------------------------------------------------------------
 main() {
-    log "ninja_patch_watcher_agent v4.14 started (PID $$)"
+    log "ninja_patch_watcher_agent v4.17 started (PID $$)"
 
     if [[ ! -x "$DIALOG_BIN" ]]; then
         log "ERROR: swiftDialog not found at $DIALOG_BIN — exiting."
@@ -287,18 +269,21 @@ main() {
                 sleep 1
                 show_progress_dialog "$app_name" "$app_icon"
                 dialog_running=true
+                ;;
 
             waiting)
                 # App was still running when Orbit tried to patch (error code 21)
                 # Keep the progress dialog up, just update the message
                 log "Updating dialog — waiting for $app_name to close..."
-                if $dialog_running; then
+                # Always check actual process, not just the flag — updater may have killed dialog
+                if pgrep -f "Dialog.app" > /dev/null 2>&1; then
                     dialog_cmd "message: **${app_name}** needs to close before updating.\n\nPlease save your work and close the application. The update will resume automatically."
                     dialog_cmd "progresstext: Waiting for application to close…"
                 else
+                    log "Dialog not running — relaunching for waiting state"
                     show_progress_dialog "$app_name" "$app_icon"
                     dialog_running=true
-                    sleep 1
+                    sleep 2
                     dialog_cmd "message: **${app_name}** needs to close before updating.\n\nPlease save your work and close the application. The update will resume automatically."
                     dialog_cmd "progresstext: Waiting for application to close…"
                 fi
@@ -344,9 +329,9 @@ main() {
                 fi
 
                 show_completion_dialog "$app_name" "$prev_version" "$new_version"
+                dialog_running=false
                 sleep 8
                 relaunch_app "$app_path"
-                dialog_running=false
                 rm -f "$DIALOG_CMD_FILE"
                 ;;
 
