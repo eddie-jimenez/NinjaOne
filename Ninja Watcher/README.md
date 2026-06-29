@@ -1,18 +1,12 @@
-# Ninja Watcher <img width="50" height="36" alt="image" src="https://github.com/user-attachments/assets/f7daa26e-71c9-4413-a62a-98a05d0e67d7" />
+# Ninja Watcher <img width="50" height="36" alt="image" src="https://github.com/user-attachments/assets/8195fa8b-c775-4921-9643-50baac17c864" />
 
 
 
-
-<img width="1030" height="281" alt="image" src="https://github.com/user-attachments/assets/0f8daad1-5497-4090-81f8-4a0845381b3e" />
-
+<img width="1030" height="281" alt="image" src="https://github.com/user-attachments/assets/a373ad00-832e-4e75-a546-66cbc8418467" />
 
 
 
-
-https://github.com/user-attachments/assets/bdf5d005-5643-4ea0-a099-51457626030c
-
-
-
+https://github.com/user-attachments/assets/eb1cfd77-d243-4705-afdf-1a7b8d609e0f
 
 
 
@@ -35,10 +29,11 @@ This tool runs as a persistent background service and:
 2. **Waits** for the user to click "Install Now" (ignores "Remind me later" and timeouts)
 3. **Shows** a branded swiftDialog progress window immediately — with the real app name and native icon
 4. **Monitors** the install by watching NinjaOne's own output files for completion
-5. **Waits** for any app updater process to finish before showing the completion state
-6. **Shows** a standalone completion dialog with version numbers once the updater is done
-7. **Relaunches** the updated application automatically as the logged-in user
-8. **Closes** the dialog once the app is visible on screen
+5. **Handles** apps that resist closure — updates the dialog to tell the user to close the app manually if NinjaOne can't force-close it
+6. **Waits** for any app updater process to finish before showing the completion state
+7. **Shows** a standalone completion dialog with version numbers once the updater is done
+8. **Relaunches** the updated application automatically as the logged-in user
+9. **Closes** the dialog once the app is visible on screen
 
 ---
 
@@ -61,10 +56,11 @@ The correct macOS architecture for system daemons that need to display UI is to 
 
 ### Instruction File Format
 
-The daemon writes a single JSON line to `/tmp/ninja_patch_ui.json`. The agent polls this file every 2 seconds and reacts to the `action` field:
+The daemon writes a single JSON line to `/tmp/ninja_patch_ui.json`. The agent polls this file every second and reacts to the `action` field:
 
 ```json
 {"action":"progress","app_name":"Firefox","app_icon":"/Applications/Firefox.app/Contents/Resources/firefox.icns","app_path":"/Applications/Firefox.app","ts":"1776370787"}
+{"action":"waiting","app_name":"Firefox","app_icon":"...","app_path":"/Applications/Firefox.app","ts":"1776370795"}
 {"action":"success","app_name":"Firefox","app_icon":"...","app_path":"/Applications/Firefox.app","new_version":"149.0.2","prev_version":"","ts":"1776370812"}
 {"action":"failure","app_name":"Firefox","error":"Installation failed","ts":"..."}
 {"action":"timeout","app_name":"Firefox","ts":"..."}
@@ -78,7 +74,7 @@ The daemon writes a single JSON line to `/tmp/ninja_patch_ui.json`. The agent po
 | Requirement | Details |
 |---|---|
 | macOS | 12 Monterey or later |
-| swiftDialog | 2.5.2 or later — [Download](https://github.com/swiftDialog/swiftDialog/releases) |
+| swiftDialog | 2.5.2 or later (3.x also supported) — [Download](https://github.com/swiftDialog/swiftDialog/releases) |
 | NinjaOne RMM Agent | Must be installed at `/Applications/NinjaRMMAgent` |
 | NinjaOne Policy | Update Notifications must be set to **"Notify user then close software and update"** |
 | Deployment | Run as **root** via Intune or NinjaOne Shell Script |
@@ -122,19 +118,38 @@ At the moment `Showing Alert Dialog` is detected, the daemon immediately snapsho
 
 **`softwareInventory.json`** — Written by the NinjaOne agent. Contains every installed app with its real display name, exact `.app` path, and installed version.
 
-The daemon matches a Ninja title to a real app by searching the inventory's location paths. This approach is fully dynamic — no hardcoded app lists — and works for any app Ninja adds to its catalog in the future.
+The daemon matches a Ninja title to a real app by searching the inventory's location paths. If the inventory file is missing, it falls back to a filesystem search that splits camelCase titles into individual words (e.g. `AcrobatDCContinuous` → tries `acrobat` → finds `Adobe Acrobat.app`). This approach is fully dynamic — no hardcoded app lists.
 
 ### Install Completion Detection
 
-After the user clicks Install Now, the daemon polls `Orbit-apply-output.json` for a change in its `monTime` field. When `monTime` changes, NinjaOrbit has written a new result — the patch is complete.
+After the user clicks Install Now, the daemon polls `Orbit-apply-output.json` using two detection methods:
+
+**Primary:** `monTime` field change — when NinjaOrbit writes a new result it updates this timestamp.
+
+**Secondary:** title match in `patch_apply_report` — Orbit sometimes appends results without updating `monTime` (e.g. when multiple patches run in sequence). The daemon also checks if the snapshot title appears in the apply report with a terminal status (`installed`, `success`, or `failed`).
 
 A 5-minute timeout is enforced. If no completion is detected, the user sees an "Update Status Unknown" dialog.
 
+### Error Code 21 — App Still Running
+
+When Orbit tries to patch an app that is still open, it returns error code `21 (Application running)`. Rather than showing a failure dialog, the watcher:
+
+1. Keeps the progress dialog on screen
+2. Updates the message to: **"[App] needs to close before updating. Please save your work and close the application. The update will resume automatically."**
+3. Updates the progress text to: "Waiting for application to close…"
+4. Continues polling — when NinjaOne closes the app and Orbit retries successfully, the watcher catches it and transitions to the completion dialog normally
+
+Most apps are closed automatically by NinjaOne. Some apps with self-protection mechanisms (TeamViewer, some VPN clients, remote access tools) may resist forced closure — in those cases the user needs to close the app manually. The dialog tells them exactly what to do.
+
 ### Updater Wait Logic
 
-Many apps (Firefox, Chrome, etc.) run a privileged helper process after Orbit reports success to perform the final install steps. This helper kills any GUI process running in the user session while it's active.
+Many apps (Firefox, Chrome, Edge, etc.) run a privileged helper process after Orbit reports success to perform the final install steps. This helper can interfere with GUI processes while it's active.
 
 The agent waits for all processes referencing the app's `.app` path to exit before launching the completion dialog. This is fully generic — it works for any app's updater without hardcoding process names.
+
+### swiftDialog Compatibility
+
+Ninja Watcher supports both swiftDialog 2.x and 3.x. The agent detects the installed major version at startup and logs it. All dialogs use `/usr/local/bin/dialog` (the `dialogcli` launcher) with `--callingpid $$` to tie the dialog lifetime to the agent process — this prevents the dialog from being killed by app updater processes during installation.
 
 ### Dialog Lifecycle
 
@@ -144,7 +159,15 @@ The agent waits for all processes referencing the app's `.app` path to exit befo
 [User clicks Install Now]
         ↓ daemon writes progress instruction
         ↓ agent launches progress dialog with real app name + native icon
-[Orbit-apply-output.json monTime changes]
+          (uses /usr/local/bin/dialog with --callingpid $$ — tied to agent lifetime)
+
+[If app is still running — Orbit error code 21]
+        ↓ daemon writes waiting instruction
+        ↓ agent updates dialog: "App needs to close before updating..."
+        ↓ progress text: "Waiting for application to close…"
+        ↓ daemon keeps polling for retry
+
+[Orbit-apply-output.json updated — patch complete]
         ↓ daemon writes success instruction
         ↓ agent waits for any app updater processes to exit
         ↓ agent kills stale progress dialog
@@ -208,6 +231,8 @@ installer -pkg /tmp/swiftDialog.pkg -target /
 
 ### Script Configuration (Intune or NinjaOne)
 
+The below deployment configuration is for Intune but can be easily deployed via NinjaOne or your MDM of choice.
+
 | Setting | Value |
 |---|---|
 | Script | Upload `deploy_ninja_patch_watcher.sh` |
@@ -227,8 +252,8 @@ The `deploy_ninja_patch_watcher.sh` script runs as root and:
 5. Writes the LaunchAgent plist to `/Library/LaunchAgents/`
 6. Configures `newsyslog` log rotation
 7. Loads the LaunchDaemon via `launchctl bootstrap system`
-8. Bootstraps the LaunchAgent into the current logged-in user's GUI session via `launchctl asuser`
-9. Verifies both loaded successfully
+8. Bootstraps the LaunchAgent into the current logged-in user's GUI session
+9. Verifies both loaded successfully using `launchctl print` (not `launchctl list` — list can hang in System session context)
 
 ### Re-deployment / Updates
 
@@ -258,8 +283,8 @@ Deploy `uninstall_ninja_patch_watcher.sh` via Intune or NinjaOne.
 
 ```bash
 # Check both services are running
-sudo launchctl list | grep ninja.patch.watcher
-launchctl asuser $(id -u $USER) launchctl list | grep ninja.patch.watcher.agent
+sudo launchctl print system/ninja.patch.watcher
+launchctl print gui/$(id -u $USER)/ninja.patch.watcher.agent
 
 # Watch live logs
 tail -f /var/log/ninja_patch_watcher.log
@@ -268,39 +293,52 @@ tail -f /tmp/ninja_patch_watcher_agent.log
 
 Expected daemon log on startup:
 ```
-[2026-04-16 17:58:37] ninja_patch_watcher v4.6 started (PID 94416)
-[2026-04-16 17:58:37] Seeded: .../NinjaRMMNJDialog_*.log at offset XXXXX
-[2026-04-16 17:58:37] Watching for NJDialog activity...
+[2026-06-29 14:50:33] ninja_patch_watcher v4.17 started (PID 94416)
+[2026-06-29 14:50:33] Seeded: .../NinjaRMMNJDialog_*.log at offset XXXXX
+[2026-06-29 14:50:33] Watching for NJDialog activity...
 ```
 
 Expected agent log on startup:
 ```
-[2026-04-16 17:58:37] ninja_patch_watcher_agent v4.6 started (PID 94512)
+[2026-06-29 14:50:34] ninja_patch_watcher_agent v4.17 started (PID 94512)
+[2026-06-29 14:50:34] swiftDialog version: 3.0.1.4955 (major: 3)
 ```
 
-Expected logs during a patch event:
+Expected logs during a normal patch event:
 ```
-[2026-04-16 17:59:57] NJDialog detected: ...NinjaRMMNJDialog_*.log
-[2026-04-16 17:59:57] Orbit apply snapshot taken (monTime: 1776376796)
-[2026-04-16 17:59:57] === NJDialog appeared — waiting for user decision ===
-[2026-04-16 18:00:00] User decision: yes
-[2026-04-16 18:00:00] === User clicked Install Now — starting patch handler ===
-[2026-04-16 18:00:00] Inventory match: 'Firefox' @ /Applications/Firefox.app
-[2026-04-16 18:00:00] UI instruction: action=progress app=Firefox
-[2026-04-16 18:00:24] Orbit apply output updated (monTime: 1776376824)
-[2026-04-16 18:00:24] Patch status: success
-[2026-04-16 18:00:24] App: Firefox | version: unknown → 149.0.2
-[2026-04-16 18:00:24] UI instruction: action=success app=Firefox
-[2026-04-16 18:00:24] === Patch event complete ===
+[2026-06-29 11:13:22] NJDialog detected: ...NinjaRMMNJDialog_*.log
+[2026-06-29 11:13:22] Orbit apply snapshot taken (monTime: 1779894608)
+[2026-06-29 11:13:22] === NJDialog appeared — waiting for user decision ===
+[2026-06-29 11:13:25] User decision: yes
+[2026-06-29 11:13:25] === User clicked Install Now — starting patch handler ===
+[2026-06-29 11:13:25] Inventory match: 'Firefox' @ /Applications/Firefox.app
+[2026-06-29 11:13:25] UI instruction: action=progress app=Firefox
+[2026-06-29 11:16:08] Orbit apply output updated (monTime: 1779894803)
+[2026-06-29 11:16:08] Patch status: success
+[2026-06-29 11:16:08] App: Firefox | version: unknown → 151.0.2
+[2026-06-29 11:16:08] UI instruction: action=success app=Firefox
+[2026-06-29 11:16:08] === Patch event complete ===
 ```
 
 And in the agent log:
 ```
-[2026-04-16 18:00:25] Received instruction: action=success ts=1776376824
-[2026-04-16 18:00:25] Waiting for updater processes in /Applications/Firefox.app to exit...
-[2026-04-16 18:00:26] Completion dialog launched (PID 5590) for: Firefox ( → 149.0.2)
-[2026-04-16 18:00:34] Relaunching: /Applications/Firefox.app
-[2026-04-16 18:00:39] Relaunch complete: Firefox
+[2026-06-29 11:13:26] Received instruction: action=progress ts=1779894805
+[2026-06-29 11:13:26] swiftDialog progress launched (PID 2120) for: Firefox (callingpid: 1298)
+[2026-06-29 11:16:09] Received instruction: action=success ts=1779894969
+[2026-06-29 11:16:10] Completion dialog launched (PID 36277) for: Firefox ( → 151.0.2)
+[2026-06-29 11:16:19] Relaunching: /Applications/Firefox.app
+[2026-06-29 11:16:24] Relaunch complete: Firefox
+```
+
+Expected logs when app needs to close first (error code 21):
+```
+[2026-06-29 11:14:23] UI instruction: action=progress app=TeamViewer
+[2026-06-29 11:14:27] Orbit reports TeamViewer failed (app still running) — updating dialog and waiting for retry...
+[2026-06-29 11:14:27] UI instruction: action=waiting app=TeamViewer
+[2026-06-29 11:14:30] Orbit reports TeamViewer failed (app still running) — updating dialog and waiting for retry...
+[2026-06-29 11:15:12] Orbit apply report contains TeamViewer with status: installed
+[2026-06-29 11:15:12] Patch status: success
+[2026-06-29 11:15:12] UI instruction: action=success app=TeamViewer
 ```
 
 ---
@@ -316,7 +354,7 @@ tail -f /var/log/ninja_patch_watcher.log
 
 Check the agent is running:
 ```bash
-launchctl asuser $(id -u $USER) launchctl list | grep ninja.patch.watcher.agent
+launchctl print gui/$(id -u $USER)/ninja.patch.watcher.agent
 ```
 
 If the agent shows exit code `78`, check that `/tmp/ninja_patch_watcher_agent.log` is writable by the user. The agent plist must use `/tmp/` for log paths, not `/var/log/`.
@@ -328,6 +366,14 @@ The agent logs the relaunch attempt. If you see `Relaunch complete` in the agent
 ### LaunchAgent fails to bootstrap (Error 5)
 
 Error 5 (`Input/output error`) on `launchctl bootstrap` means the log path in the plist is not writable by the user. Ensure `StandardOutPath` and `StandardErrorPath` in the LaunchAgent plist point to `/tmp/`, not `/var/log/`.
+
+### App won't close automatically (TeamViewer, VPN clients, remote access tools)
+
+Some apps use self-protection mechanisms that prevent NinjaOne from force-closing them. The watcher will show a "waiting" dialog telling the user to close the app manually. Once the user closes it, NinjaOne will retry the patch automatically and the flow will complete normally.
+
+This is expected behavior for apps like TeamViewer, Cisco AnyConnect, and similar system-level tools. Include this in user-facing communications:
+
+> *If you see "App needs to close before updating", please save your work and close the application manually. The update will resume automatically.*
 
 ### Manually stop/start the services
 
@@ -360,7 +406,7 @@ With the recommended settings:
 | Component | Tested Version |
 |---|---|
 | macOS | Sequoia 15.x |
-| swiftDialog | 2.5.2.4777 |
+| swiftDialog | 2.5.x and 3.0.1.4955 (both supported) |
 | NinjaOne macOS Agent | 7.x |
 | NinjaOrbit (app patching) | 12.0.5400 |
 
@@ -370,11 +416,23 @@ With the recommended settings:
 
 | Version | Changes |
 |---|---|
+| 4.17 | **Root fix for progress dialog not appearing**: switched all dialog calls from `Dialog` binary to `/usr/local/bin/dialog` (dialogcli) with `--callingpid $$`. swiftDialog 3.x `dialogcli` injects its own PID as `--callingpid`; when called from a background subshell that exits immediately, Dialog was monitoring the subshell PID and exiting with code 40. Passing the agent's own PID keeps Dialog alive for the full session regardless of what the updater does. Also restored `--button1disabled` and `--progress` — these were never removed from 3.x; earlier diagnosis was incorrect |
+| 4.16.1 | Fixed deploy script hanging on `launchctl list` — replaced with `launchctl print` which returns immediately in System session context |
+| 4.16 | Fixed `waiting` case in agent — checks `pgrep -f "Dialog.app"` directly instead of trusting `dialog_running` flag; updater kill no longer prevents "waiting" message from appearing |
+| 4.15 | Fixed missing `;;` after `progress)` case causing syntax error on every agent poll cycle |
+| 4.14 | `waiting` action added: progress dialog stays up and updates message when app still running (error code 21); NinjaOne closes app and Orbit retries without user seeing a failure dialog |
+| 4.13 | Error code 21 detection on both monTime-change and title-match paths — daemon keeps polling instead of declaring failure when app is still running |
+| 4.12 | Dual completion detection (monTime change + title match in apply report); title-aware status and version lookup via Python — fixes wrong app being reported when multiple patches run in sequence |
+| 4.11 | swiftDialog version detection at agent startup; swiftDialog 3.x compatibility: bare flags moved to end of command when calling Dialog binary directly |
+| 4.10 | Removed `--button1disabled` (incorrect diagnosis — restored in 4.17) |
+| 4.9 | Background monitor loop for progress dialog relaunch — replaced fire-and-forget subshell with persistent watcher |
+| 4.8 | Poll interval reduced to 1s; progress dialog relaunch on kill |
+| 4.7 | CamelCase filesystem fallback — splits Ninja titles at camelCase word boundaries (e.g. `AcrobatDCContinuous` → tries `acrobat` → finds `Adobe Acrobat.app`) |
 | 4.6 | Added 8-second grace period before app relaunch to allow install to fully settle |
-| 4.5 | Fixed deploy script structure using base64-encoded scripts to eliminate heredoc nesting issues; removed all decimal `sleep` calls incompatible with macOS `sleep` |
+| 4.5 | Fixed deploy script structure using base64-encoded scripts; removed decimal `sleep` calls incompatible with macOS `sleep` |
 | 4.4 | Updater wait logic made fully generic — waits for any process referencing the app path to exit, covering all apps (Firefox, Chrome, TeamViewer, etc.) |
 | 4.3 | Added wait for `org.mozilla.updater` before showing completion dialog (superseded by 4.4) |
-| 4.2 | Agent `DIALOG_BIN` changed to real binary at `/Library/Application Support/Dialog/Dialog.app/Contents/MacOS/Dialog` to avoid double-wrap kill from wrapper script |
+| 4.2 | Agent `DIALOG_BIN` changed to real Dialog binary at `/Library/Application Support/Dialog/Dialog.app/Contents/MacOS/Dialog` (superseded by 4.17) |
 | 4.1 | Fixed agent log path from `/var/log/` to `/tmp/` — user-context agent cannot write to `/var/log/` |
 | 4.0 | **Architecture change**: Split into daemon (root, logic) + agent (user, UI). LaunchDaemons run in `System` session type and cannot spawn persistent GUI processes — this is a macOS restriction with no plist workaround. Agent runs as logged-in user in `Aqua` session with full GUI access. LaunchDaemon plist must omit `UserName` key to avoid being forced into `LimitLoadToSessionType=System` |
 | 3.x | Single-script attempts — all failed due to `LimitLoadToSessionType=System` killing swiftDialog |
